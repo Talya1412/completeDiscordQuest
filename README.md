@@ -1,8 +1,8 @@
-# FarmQuests for Vencord
+# CompleteDiscordQuest for Vencord
 
-This is a porting of the original BetterDiscord(BD) plugin [FarmQuests](https://github.com/nicola02nb/BetterDiscord-Stuff/tree/main/Plugins/FarmQuests).
+This is a porting of the original BetterDiscord(BD) plugin [CompleteDiscordQuest](https://github.com/nicola02nb/BetterDiscord-Stuff/tree/main/Plugins/CompleteDiscordQuest).
 
-A Vencord(VC) plugin that farms you multiple discord quests in background simultaneously.
+A Vencord(VC) plugin that completes you multiple discord quests in background simultaneously.
 
 ## Credits:
 
@@ -10,4 +10,4 @@ This is a porting for BetterDiscord of a [snippet](https://gist.github.com/aamia
 
 ## Features:
 
--   Set inteval time to check for new quests
+- Set inteval time to check for new quests

@@ -33,14 +33,14 @@ function questsStatus() {
             acc.enrollable++;
         }
         return acc;
-    }, { enrollable: 0, enrolled: 0, claimable: 0, claimed: 0, expired: 0 });
+    }, { enrollable: 1, enrolled: 1, claimable: 1, claimed: 0, expired: 0 });
 }
 
 export function QuestsCount() {
-    const [state, setState] = useState({ enrollable: 0, enrolled: 0, claimable: 0, claimed: 0, expired: 0 });
+    const [status, setStatus] = useState({ enrollable: 1, enrolled: 1, claimable: 1, claimed: 0, expired: 0 });
 
     const checkForNewQuests = () => {
-        setState(questsStatus());
+        setStatus(questsStatus());
     };
 
     useEffect(() => {
@@ -53,37 +53,37 @@ export function QuestsCount() {
     return (
         <Flex direction={Flex.Direction.HORIZONTAL} justify={Flex.Justify.END} className={"quest-button-badges"}>
 
-            {state.enrollable > 0 && (
+            {status.enrollable > 0 && (
                 <Tooltip text={"Enrollable"}>
                     {({ onMouseEnter, onMouseLeave }) => (
                         <CountBadge
                             onMouseEnter={onMouseEnter}
                             onMouseLeave={onMouseLeave}
-                            count={state.enrollable}
+                            count={status.enrollable}
                             color={"var(--status-danger)"}
                         />
                     )}
                 </Tooltip>
             )}
-            {state.enrolled > 0 && (
+            {status.enrolled > 0 && (
                 <Tooltip text={"Enrolled"}>
                     {({ onMouseEnter, onMouseLeave }) => (
                         <CountBadge
                             onMouseEnter={onMouseEnter}
                             onMouseLeave={onMouseLeave}
-                            count={state.enrolled}
+                            count={status.enrolled}
                             color={"var(--status-warning)"}
                         />
                     )}
                 </Tooltip>
             )}
-            {state.claimable > 0 && (
+            {status.claimable > 0 && (
                 <Tooltip text={"Claimable"}>
                     {({ onMouseEnter, onMouseLeave }) => (
                         <CountBadge
                             onMouseEnter={onMouseEnter}
                             onMouseLeave={onMouseLeave}
-                            count={state.claimable}
+                            count={status.claimable}
                             color={"var(--status-positive)"}
                         />
                     )}

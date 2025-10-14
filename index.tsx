@@ -140,7 +140,7 @@ function updateQuests() {
             completeQuest(quest);
         }
     }
-    console.log("Completable quests updated:", completableQuests);
+    // console.log("Completable quests updated:", completableQuests);
 }
 
 function stopCompletingAll() {

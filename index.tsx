@@ -5,13 +5,17 @@
  */
 
 import definePlugin from "@utils/types";
+import { findByPropsLazy } from "@webpack";
 import { FluxDispatcher, RestAPI } from "@webpack/common";
 
 import { QuestButton, QuestsCount } from "./components/QuestButton";
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 
+const { enrollAndStartVideoQuestWithErrorHandling }: { enrollAndStartVideoQuestWithErrorHandling: (quest: QuestValue, action: QuestAction) => Promise<any>; } = findByPropsLazy("enrollAndStartVideoQuestWithErrorHandling");
+
 let availableQuests: QuestValue[] = [];
+let acceptableQuests: QuestValue[] = [];
 let completableQuests: QuestValue[] = [];
 
 const completingQuest = new Map();
@@ -131,7 +135,11 @@ export default definePlugin({
 
 function updateQuests() {
     availableQuests = [...QuestsStore.quests.values()];
-    completableQuests = availableQuests.filter(x => /* x.id !== "1248385850622869556" &&  */x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+    acceptableQuests = availableQuests.filter(x => x.userStatus?.enrolledAt == null && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+    completableQuests = availableQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+    for (const quest of acceptableQuests) {
+        acceptQuest(quest);
+    }
     for (const quest of completableQuests) {
         if (completingQuest.has(quest.id)) {
             if (completingQuest.get(quest.id) === false) {
@@ -141,7 +149,26 @@ function updateQuests() {
             completeQuest(quest);
         }
     }
+    // console.log("Available quests updated:", availableQuests);
+    // console.log("Acceptable quests updated:", acceptableQuests);
     // console.log("Completable quests updated:", completableQuests);
+}
+
+function acceptQuest(quest: QuestValue) {
+    if (!settings.store.acceptQuestsAutomatically) return;
+    const action: QuestAction = {
+        questContent: 11,
+        questContentCTA: "ACCEPT_QUEST",
+        questContentPosition: 0,
+        questContentRowIndex: 0,
+        sourceQuestContent: 0,
+        sourceQuestContentCTA: "ACCEPT_QUEST"
+    };
+    enrollAndStartVideoQuestWithErrorHandling(quest, action).then(() => {
+        console.log("Accepted quest:", quest.config.messages.questName);
+    }).catch(err => {
+        console.error("Failed to accept quest:", quest.config.messages.questName, err);
+    });
 }
 
 function stopCompletingAll() {

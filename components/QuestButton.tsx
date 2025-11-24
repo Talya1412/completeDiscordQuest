@@ -7,9 +7,10 @@
 import "./QuestButton.css";
 
 import { findByCodeLazy, findByPropsLazy, findComponentByCodeLazy } from "@webpack";
-import { Flex, Tooltip, useEffect, useState } from "@webpack/common";
+import { Tooltip, useEffect, useState } from "@webpack/common";
 
 import { QuestsStore } from "../stores";
+import { Flex } from "@components/Flex";
 
 const QuestIcon = findByCodeLazy("\"M7.5 21.7a8.95");
 const { navigateToQuestHome } = findByPropsLazy("navigateToQuestHome");
@@ -51,7 +52,7 @@ export function QuestsCount() {
     }, []);
 
     return (
-        <Flex direction={Flex.Direction.HORIZONTAL} justify={Flex.Justify.END} className={"quest-button-badges"}>
+        <Flex flexDirection={"row"} justifyContent={"flex-end"} className={"quest-button-badges"}>
             {status.enrollable > 0 && (
                 <Tooltip text={"Enrollable"}>
                     {({ onMouseEnter, onMouseLeave }) => (

@@ -331,7 +331,7 @@ export default definePlugin({
     description: "A plugin that completes multiple discord quests in background simultaneously.",
     authors: [{
         name: "Talya1412",
-        id: 257900031351193600n
+        id: 935942283214344302n
     }],
     settings,
     patches: [

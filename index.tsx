@@ -195,38 +195,41 @@ function getSpoofingProfile(): SpoofingProfile {
 
 function gatherRedeemCodes(body: any): string[] {
     const codes = new Set<string>();
-    const codePattern = /^[A-Za-z0-9-]{8,}$/;
-    const keysToCheck = ["code", "redemptionCode", "gift_code", "giftCode", "redeemableCode", "claimCode"];
+    const codePattern = /^[A-Za-z0-9-]{10,}$/;
+    const keysToCheck = ["code", "redemption_code", "redemptionCode", "gift_code", "giftCode", "redeemable_code", "redeemableCode", "claim_code", "claimCode", "reward_code", "rewardCode"];
 
-    const walk = (value: any, depth: number) => {
-        if (depth > 3 || value == null) return;
+    const isValidRedeemCode = (str: string): boolean => {
+        if (!codePattern.test(str)) return false;
+        if (/^\d+$/.test(str)) return false;
+        if (str.length < 10 || str.length > 50) return false;
+        const letterCount = (str.match(/[A-Za-z]/g) || []).length;
+        return letterCount >= 3;
+    };
+
+    const walk = (value: any, depth: number, fromKey: string = "") => {
+        if (depth > 4 || value == null) return;
+
         if (typeof value === "string") {
             const trimmed = value.trim();
-            if (codePattern.test(trimmed)) {
+            if (keysToCheck.includes(fromKey.toLowerCase()) && isValidRedeemCode(trimmed)) {
                 codes.add(trimmed);
             }
             return;
         }
+
         if (Array.isArray(value)) {
             for (const item of value) {
-                walk(item, depth + 1);
+                walk(item, depth + 1, fromKey);
             }
             return;
         }
+
         if (typeof value === "object") {
-            for (const key of keysToCheck) {
-                if (Object.prototype.hasOwnProperty.call(value, key)) {
-                    walk((value as any)[key], depth + 1);
-                }
-            }
-            for (const nested of Object.values(value)) {
-                if (typeof nested === "string") {
-                    const trimmed = nested.trim();
-                    if (codePattern.test(trimmed)) {
-                        codes.add(trimmed);
-                    }
-                } else if (typeof nested === "object") {
-                    walk(nested, depth + 1);
+            for (const [key, val] of Object.entries(value)) {
+                if (keysToCheck.includes(key.toLowerCase())) {
+                    walk(val, depth + 1, key);
+                } else {
+                    walk(val, depth + 1, "");
                 }
             }
         }
@@ -238,12 +241,19 @@ function gatherRedeemCodes(body: any): string[] {
 
 function appendRedeemCodes(codes: string[], questName: string) {
     if (codes.length === 0) return;
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date().toLocaleString();
     const existing = (settings.store.redeemCodes ?? "").split("\n").map(x => x.trim()).filter(Boolean);
-    const newEntries = codes.map(code => `${code} (${questName} @ ${timestamp})`);
-    const merged = Array.from(new Set([...newEntries, ...existing]));
+    const existingCodes = existing.map(line => line.split(" ")[0]);
+
+    const newEntries = codes
+        .filter(code => !existingCodes.includes(code))
+        .map(code => `${code} (${questName} - ${timestamp})`);
+
+    if (newEntries.length === 0) return;
+
+    const merged = [...newEntries, ...existing];
     settings.store.redeemCodes = merged.join("\n");
-    console.log("[CompleteDiscordQuest] Saved redeem codes:", codes.join(", "));
+    console.log("[CompleteDiscordQuest] Saved redeem codes:", newEntries.map(e => e.split(" ")[0]).join(", "));
 }
 
 async function claimQuestReward(quest: QuestValue) {

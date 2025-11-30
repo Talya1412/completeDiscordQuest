@@ -179,8 +179,8 @@ The developers are not responsible for any consequences of using this plugin.
 
 - Original snippet by [aamiaa](https://github.com/aamiaa)
 - Original Vencord port by [nicola02nb](https://github.com/nicola02nb/completeDiscordQuest)
-- Enhanced fork by [Talya1412](https://github.com/Talya1412)
-- Vencord team for the modding framework
+- Fork by [Talya1412](https://github.com/Talya1412)
+
 
 ## License
 

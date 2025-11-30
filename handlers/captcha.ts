@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-/**
- * Free DOM-based captcha solver
- * Adapted from puppeteer-hcaptcha approach for Discord environment
- * WARNING: Using this may violate Discord's Terms of Service
- */
-
 export interface CaptchaChallenge {
     captcha_key?: string[];
     captcha_sitekey?: string;
@@ -24,9 +18,6 @@ export interface CaptchaBypassResult {
     error?: string;
 }
 
-/**
- * Token cache entry
- */
 interface TokenCacheEntry {
     token: string;
     sitekey: string;
@@ -34,21 +25,11 @@ interface TokenCacheEntry {
     expiresAt: number;
 }
 
-/**
- * Token cache storage
- * Maps sitekey to cached token
- */
 const tokenCache = new Map<string, TokenCacheEntry>();
 
-/**
- * Token cache settings
- */
-const CACHE_LIFETIME_MS = 120000; // 2 minutes (hCaptcha tokens expire quickly)
-const CACHE_CLEANUP_INTERVAL_MS = 60000; // Cleanup every 1 minute
+const CACHE_LIFETIME_MS = 120000;
+const CACHE_CLEANUP_INTERVAL_MS = 60000;
 
-/**
- * Get cached token for a sitekey
- */
 function getCachedToken(sitekey: string): string | null {
     const entry = tokenCache.get(sitekey);
 
@@ -56,7 +37,6 @@ function getCachedToken(sitekey: string): string | null {
         return null;
     }
 
-    // Check if expired
     if (Date.now() > entry.expiresAt) {
         console.log("[TokenCache] Token expired for sitekey:", sitekey);
         tokenCache.delete(sitekey);
@@ -67,9 +47,6 @@ function getCachedToken(sitekey: string): string | null {
     return entry.token;
 }
 
-/**
- * Cache a token for a sitekey
- */
 function cacheToken(sitekey: string, token: string): void {
     const now = Date.now();
     const entry: TokenCacheEntry = {
@@ -83,9 +60,6 @@ function cacheToken(sitekey: string, token: string): void {
     console.log("[TokenCache] 💾 Cached token for sitekey:", sitekey, "(expires in 2 min)");
 }
 
-/**
- * Cleanup expired tokens from cache
- */
 function cleanupExpiredTokens(): void {
     const now = Date.now();
     let cleaned = 0;
@@ -102,9 +76,6 @@ function cleanupExpiredTokens(): void {
     }
 }
 
-/**
- * Start automatic cache cleanup
- */
 let cleanupInterval: NodeJS.Timeout | null = null;
 
 export function startTokenCacheCleanup(): void {
@@ -117,9 +88,6 @@ export function startTokenCacheCleanup(): void {
     console.log("[TokenCache] Started automatic cleanup (every 1 min)");
 }
 
-/**
- * Stop automatic cache cleanup
- */
 export function stopTokenCacheCleanup(): void {
     if (cleanupInterval) {
         clearInterval(cleanupInterval);
@@ -128,9 +96,6 @@ export function stopTokenCacheCleanup(): void {
     }
 }
 
-/**
- * Clear all cached tokens
- */
 export function clearTokenCache(): void {
     const count = tokenCache.size;
     tokenCache.clear();
@@ -138,13 +103,9 @@ export function clearTokenCache(): void {
 }
 
 
-/**
- * Detects if an API response contains a captcha challenge
- */
 export function detectCaptchaChallenge(response: any): CaptchaChallenge | null {
     if (!response) return null;
 
-    // Check for captcha in response body
     if (response.captcha_key || response.captcha_sitekey) {
         return {
             captcha_key: response.captcha_key,
@@ -155,7 +116,6 @@ export function detectCaptchaChallenge(response: any): CaptchaChallenge | null {
         };
     }
 
-    // Check for captcha in error response
     if (response.body?.captcha_key || response.body?.captcha_sitekey) {
         return {
             captcha_key: response.body.captcha_key,
@@ -169,9 +129,6 @@ export function detectCaptchaChallenge(response: any): CaptchaChallenge | null {
     return null;
 }
 
-/**
- * Wait for element to appear in DOM
- */
 async function waitForElement(selector: string, timeout: number = 10000): Promise<Element | null> {
     const startTime = Date.now();
 
@@ -184,15 +141,10 @@ async function waitForElement(selector: string, timeout: number = 10000): Promis
     return null;
 }
 
-/**
- * Auto-solve hCaptcha checkbox (works for easy captchas)
- * Uses simulated clicks instead of DOM access due to CORS restrictions
- */
 export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> {
     try {
         console.log("[CaptchaSolver] Looking for hCaptcha iframe...");
 
-        // Wait for hCaptcha iframe
         const iframe = await waitForElement("iframe[src*=\"hcaptcha.com/checkbox\"]");
         if (!iframe) {
             console.log("[CaptchaSolver] No checkbox iframe found");
@@ -204,16 +156,12 @@ export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> 
 
         console.log("[CaptchaSolver] Found hCaptcha iframe, simulating click...");
 
-        // Cannot access iframe.contentDocument due to CORS
-        // Instead, simulate a click on the iframe itself
         const iframeElement = iframe as HTMLIFrameElement;
 
-        // Get iframe bounding rect to click in center
         const rect = iframeElement.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
 
-        // Create and dispatch mouse events
         const mouseDownEvent = new MouseEvent("mousedown", {
             view: window,
             bubbles: true,
@@ -238,7 +186,6 @@ export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> 
             clientY: centerY
         });
 
-        // Dispatch events
         iframeElement.dispatchEvent(mouseDownEvent);
         await new Promise(resolve => setTimeout(resolve, 50));
         iframeElement.dispatchEvent(mouseUpEvent);
@@ -247,10 +194,8 @@ export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> 
 
         console.log("[CaptchaSolver] Click events dispatched, waiting for response...");
 
-        // Wait for potential solving (maybe it's an easy captcha)
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        // Try to get token
         const tokenElement = document.querySelector("[name=\"h-captcha-response\"]") as HTMLTextAreaElement;
         if (tokenElement && tokenElement.value) {
             console.log("[CaptchaSolver] ✅ Captcha solved!");
@@ -260,7 +205,6 @@ export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> 
             };
         }
 
-        // If no token, captcha probably requires image solving
         console.log("[CaptchaSolver] No token received - captcha likely requires manual solving");
         return {
             success: false,
@@ -275,9 +219,6 @@ export async function autoSolveHCaptchaCheckbox(): Promise<CaptchaBypassResult> 
     }
 }
 
-/**
- * Solve hCaptcha using NopeCHA API (100/day free)
- */
 async function solveWithNopeCHA(
     siteKey: string,
     pageUrl: string,
@@ -294,7 +235,6 @@ async function solveWithNopeCHA(
         console.log("[NopeCHA] Solving hCaptcha...");
         console.log("[NopeCHA] Site key:", siteKey);
 
-        // NopeCHA API endpoint
         const response = await fetch("https://api.nopecha.com/", {
             method: "POST",
             headers: {
@@ -339,9 +279,6 @@ async function solveWithNopeCHA(
     }
 }
 
-/**
- * Solve hCaptcha using 2Captcha API
- */
 async function solveWith2Captcha(
     siteKey: string,
     pageUrl: string,
@@ -357,7 +294,6 @@ async function solveWith2Captcha(
     try {
         console.log("[2Captcha] Solving hCaptcha...");
 
-        // Step 1: Submit captcha task
         const submitResponse = await fetch(`https://2captcha.com/in.php?key=${apiKey}&method=hcaptcha&sitekey=${siteKey}&pageurl=${encodeURIComponent(pageUrl)}&json=1`);
         const submitData = await submitResponse.json();
 
@@ -371,9 +307,8 @@ async function solveWith2Captcha(
         const taskId = submitData.request;
         console.log("[2Captcha] Task submitted:", taskId);
 
-        // Step 2: Poll for result
         for (let i = 0; i < 30; i++) {
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s between polls
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             const resultResponse = await fetch(`https://2captcha.com/res.php?key=${apiKey}&action=get&id=${taskId}&json=1`);
             const resultData = await resultResponse.json();
@@ -407,9 +342,6 @@ async function solveWith2Captcha(
     }
 }
 
-/**
- * Solve hCaptcha using CapSolver API
- */
 async function solveWithCapSolver(
     siteKey: string,
     pageUrl: string,
@@ -425,7 +357,6 @@ async function solveWithCapSolver(
     try {
         console.log("[CapSolver] Solving hCaptcha...");
 
-        // Step 1: Create task
         const createResponse = await fetch("https://api.capsolver.com/createTask", {
             method: "POST",
             headers: {
@@ -453,9 +384,8 @@ async function solveWithCapSolver(
         const { taskId } = createData;
         console.log("[CapSolver] Task created:", taskId);
 
-        // Step 2: Poll for result
         for (let i = 0; i < 30; i++) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             const resultResponse = await fetch("https://api.capsolver.com/getTaskResult", {
                 method: "POST",
@@ -499,9 +429,6 @@ async function solveWithCapSolver(
     }
 }
 
-/**
- * Main bypass function - multi-service support with caching
- */
 export async function bypassCaptcha(
     challenge: CaptchaChallenge,
     servicePreference?: string,
@@ -513,7 +440,6 @@ export async function bypassCaptcha(
 ): Promise<CaptchaBypassResult> {
     console.log("[CaptchaSolver] Attempting to solve captcha...", challenge);
 
-    // Priority 0: Check cache first
     if (challenge.captcha_sitekey) {
         const cachedToken = getCachedToken(challenge.captcha_sitekey);
         if (cachedToken) {
@@ -535,11 +461,9 @@ export async function bypassCaptcha(
     const sitekey = challenge.captcha_sitekey;
     const url = "https://discord.com";
 
-    // Determine service priority
     const services: Array<{ name: string, solver: () => Promise<CaptchaBypassResult>; }> = [];
 
     if (servicePreference === "auto" || !servicePreference) {
-        // Auto mode: try all available services in priority order
         if (apiKeys?.nopecha) {
             services.push({
                 name: "NopeCHA",
@@ -559,7 +483,6 @@ export async function bypassCaptcha(
             });
         }
     } else {
-        // Specific service selected
         if (servicePreference === "nopecha" && apiKeys?.nopecha) {
             services.push({
                 name: "NopeCHA",
@@ -578,13 +501,11 @@ export async function bypassCaptcha(
         }
     }
 
-    // Try API services
     for (const service of services) {
         console.log(`[CaptchaSolver] Trying ${service.name}...`);
         const result = await service.solver();
 
         if (result.success && result.token) {
-            // Cache successful result
             cacheToken(sitekey, result.token);
             return result;
         }
@@ -592,7 +513,6 @@ export async function bypassCaptcha(
         console.warn(`[CaptchaSolver] ${service.name} failed:`, result.error);
     }
 
-    // Fallback: Try free auto-click method
     if (servicePreference !== "fallback") {
         console.log("[CaptchaSolver] Trying free fallback method...");
         const result = await autoSolveHCaptchaCheckbox();
@@ -603,7 +523,6 @@ export async function bypassCaptcha(
         }
     }
 
-    // All methods failed
     console.warn("[CaptchaSolver] All solve methods failed");
     console.warn("[CaptchaSolver] Available options:");
     console.warn("  1. Get NopeCHA API key (100/day FREE) at nopecha.com");
@@ -617,9 +536,6 @@ export async function bypassCaptcha(
     };
 }
 
-/**
- * Monitor for captcha popups and auto-solve
- */
 export function setupCaptchaMonitor(
     servicePreference?: string,
     apiKeys?: {
@@ -630,17 +546,14 @@ export function setupCaptchaMonitor(
 ) {
     console.log("[CaptchaSolver] Setting up captcha monitor...");
 
-    // Watch for hCaptcha iframes appearing
     const observer = new MutationObserver(async mutations => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node instanceof HTMLElement) {
-                    // Log ALL iframes for debugging
                     if (node instanceof HTMLIFrameElement) {
                         console.log("[CaptchaSolver] 📋 Iframe detected:", node.src);
                     }
 
-                    // Look for ANY hCaptcha iframe (not just checkbox)
                     const iframe = node.querySelector ?
                         node.querySelector("iframe[src*=\"hcaptcha.com\"]") :
                         null;
@@ -651,21 +564,17 @@ export function setupCaptchaMonitor(
                             iframe ? (iframe as HTMLIFrameElement).src : (node as HTMLIFrameElement).src
                         );
 
-                        // Extract sitekey from iframe src if possible
                         const iframeSrc = iframe ? (iframe as HTMLIFrameElement).src : (node as HTMLIFrameElement).src;
                         const sitekeyMatch = iframeSrc.match(/sitekey=([^&]+)/);
                         const sitekey = sitekeyMatch ? sitekeyMatch[1] : undefined;
 
-                        // Create challenge object
                         const challenge: CaptchaChallenge = {
                             captcha_sitekey: sitekey,
                             captcha_service: "hcaptcha"
                         };
 
-                        // Wait for iframe to load
                         await new Promise(resolve => setTimeout(resolve, 2000));
 
-                        // Try to solve with configured services
                         const result = await bypassCaptcha(challenge, servicePreference, apiKeys);
                         if (result.success) {
                             console.log("[CaptchaSolver] ✅ Auto-solved captcha!");
@@ -679,7 +588,6 @@ export function setupCaptchaMonitor(
         }
     });
 
-    // Observe entire document for captcha iframes
     observer.observe(document.body, {
         childList: true,
         subtree: true
@@ -690,9 +598,6 @@ export function setupCaptchaMonitor(
     return observer;
 }
 
-/**
- * Cleanup function
- */
 export function cleanupCaptchaMonitor(observer: MutationObserver) {
     if (observer) {
         observer.disconnect();
@@ -700,14 +605,11 @@ export function cleanupCaptchaMonitor(observer: MutationObserver) {
     }
 }
 
-// Legacy functions for compatibility
 export function generateBypassToken(): string {
-    // Not used anymore, keeping for compatibility
     return "";
 }
 
 export function patchRequestWithCaptchaBypass(requestBody: any, captchaToken?: string): any {
-    // Remove captcha keys from request
     const cleanBody = { ...requestBody };
     delete cleanBody.captcha_key;
     delete cleanBody.captcha_rqtoken;

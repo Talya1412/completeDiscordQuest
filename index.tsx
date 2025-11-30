@@ -30,7 +30,6 @@ const fakeGames = new Map();
 const fakeApplications = new Map();
 const claimingQuest = new Set<string>();
 
-// Store original RestAPI methods
 let originalRestAPI: any = null;
 let captchaBypassEnabled = false;
 let captchaMonitor: MutationObserver | null = null;
@@ -40,7 +39,6 @@ function enableCaptchaBypass() {
 
     console.log("[CompleteDiscordQuest] Enabling captcha bypass wrapper");
 
-    // Store original methods
     if (!originalRestAPI) {
         originalRestAPI = {
             post: RestAPI.post.bind(RestAPI),
@@ -49,19 +47,14 @@ function enableCaptchaBypass() {
         };
     }
 
-    // Wrap POST method
     RestAPI.post = async function (options: any) {
-        // Dynamically check if captcha solving is enabled
         if (!settings.store.autoCaptchaSolving) {
             return await originalRestAPI.post(options);
         }
 
         const opts = { ...options };
 
-        // BYPASS STRATEGY: Remove captcha keys instead of injecting fake ones
-        // Discord will reject fake tokens, but might accept requests without captcha keys
         if (opts.body && typeof opts.body === "object") {
-            // Remove any captcha-related fields
             delete opts.body.captcha_key;
             delete opts.body.captcha_rqtoken;
             delete opts.body.captcha_rqdata;
@@ -72,8 +65,6 @@ function enableCaptchaBypass() {
         try {
             return await originalRestAPI.post(opts);
         } catch (err: any) {
-            // If still getting captcha error, there's nothing we can bypass
-            // This means Discord REQUIRES a valid captcha
             const challenge = detectCaptchaChallenge(err);
             if (challenge) {
                 console.warn("[CaptchaBypass] Captcha is REQUIRED for this request. Cannot bypass.");
@@ -83,7 +74,6 @@ function enableCaptchaBypass() {
         }
     };
 
-    // Wrap GET method
     RestAPI.get = async function (options: any) {
         if (!settings.store.autoCaptchaSolving) {
             return await originalRestAPI.get(options);
@@ -116,7 +106,6 @@ function disableCaptchaBypass() {
 
     console.log("[CompleteDiscordQuest] Disabling captcha bypass wrapper");
 
-    // Restore original methods
     RestAPI.post = originalRestAPI.post;
     RestAPI.get = originalRestAPI.get;
     if (originalRestAPI.patch) {
@@ -138,8 +127,8 @@ const RewardPreference = {
 type RewardPreference = (typeof RewardPreference)[keyof typeof RewardPreference];
 
 const NitroSkuIds = new Set<string>([
-    "521842865731829760", // Nitro Classic Monthly
-    "521846918637420545", // Nitro Monthly
+    "521842865731829760",
+    "521846918637420545",
 ]);
 
 function getQuestRewardCategories(quest: QuestValue): RewardPreference[] {
@@ -265,7 +254,6 @@ async function claimQuestReward(quest: QuestValue) {
     const questName = quest.config.messages.questName ?? quest.id;
     const endpoints = [`/quests/${quest.id}/claim-reward`];
 
-    // Add captcha bypass to payload if enabled
     let claimPayload: any = {
         platform: 0,
         location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
@@ -290,14 +278,12 @@ async function claimQuestReward(quest: QuestValue) {
                 }
                 return true;
             } catch (err: any) {
-                // Check if error is due to captcha
                 if (settings.store.autoCaptchaSolving) {
                     const challenge = detectCaptchaChallenge(err);
                     if (challenge) {
                         console.log("[CompleteDiscordQuest] Captcha detected during claim, bypassing...");
                         const bypassResult = await bypassCaptcha(challenge);
                         if (bypassResult.success && bypassResult.token) {
-                            // Retry with captcha token
                             try {
                                 const retryRes = await callWithRetry(fn, { label: "claim-reward-with-captcha" });
                                 const codes = gatherRedeemCodes(retryRes?.body ?? retryRes);
@@ -363,7 +349,7 @@ export default definePlugin({
                 replace: "$&$self.renderQuestButtonSettingsBar(),"
             }
         },
-        { // PTB Experimental
+        {
             find: "\"innerRef\",\"navigate\",\"onClick\"",
             replacement: {
                 match: /(\i).createElement\("a",(\i)\)/,
@@ -403,13 +389,10 @@ export default definePlugin({
         QuestsStore.addChangeListener(updateQuests);
         updateQuests();
 
-        // Enable captcha bypass wrapper (it will check settings dynamically)
         enableCaptchaBypass();
 
-        // Start token cache cleanup
         startTokenCacheCleanup();
 
-        // Setup captcha monitor for auto-solving
         if (settings.store.autoCaptchaSolving) {
             const servicePreference = settings.store.captchaSolvingService;
             const apiKeys = {
@@ -425,11 +408,9 @@ export default definePlugin({
         stopCompletingAll();
         disableCaptchaBypass();
 
-        // Stop token cache cleanup
         stopTokenCacheCleanup();
         clearTokenCache();
 
-        // Cleanup captcha monitor
         if (captchaMonitor) {
             cleanupCaptchaMonitor(captchaMonitor);
             captchaMonitor = null;
@@ -457,7 +438,6 @@ export default definePlugin({
         if (settings.store.showQuestsButtonBadges && typeof questButton === "string" && questButton === "quests") {
             return (<QuestsCount />);
         }
-        // Experiment
         if (settings.store.showQuestsButtonBadges && questButton?.href?.startsWith("/quest-home")
             && Array.isArray(questButton?.children) && questButton.children.findIndex(child => child?.type === QuestsCount) === -1) {
             questButton.children.push(<QuestsCount />);
@@ -505,9 +485,6 @@ function updateQuests() {
     for (const quest of claimableQuests) {
         claimQuestReward(quest);
     }
-    /* console.log("Available quests updated:", availableQuests);
-    console.log("Acceptable quests updated:", acceptableQuests);
-    console.log("Completable quests updated:", completableQuests); */
 }
 
 async function acceptQuest(quest: QuestValue) {
@@ -522,7 +499,6 @@ async function acceptQuest(quest: QuestValue) {
         await QuestApplyAction(quest.id, action);
         console.log("Accepted quest:", quest.config.messages.questName);
     } catch (err: any) {
-        // Check if error is due to captcha and auto-solving is enabled
         if (settings.store.autoCaptchaSolving) {
             const challenge = detectCaptchaChallenge(err);
             if (challenge) {

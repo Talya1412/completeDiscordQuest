@@ -1,4 +1,4 @@
-# CompleteDiscordQuest for Vencord (Enhanced Fork)
+# CompleteDiscordQuest for Vencord 
 
 A fork of [nicola02nb/completeDiscordQuest](https://github.com/nicola02nb/completeDiscordQuest) with advanced features including automatic captcha solving, reward code extraction, and enhanced quest automation.
 

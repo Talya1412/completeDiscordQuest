@@ -106,7 +106,7 @@ Multiple locations for quest buttons with badge counters:
    cd Vencord/src/userplugins
    git clone https://github.com/Talya1412/completeDiscordQuest.git
    ```
-3. Rebuild Vencord
+3. Reinject Vencord
    ```bash
    cd Vencord
    pnpm inject

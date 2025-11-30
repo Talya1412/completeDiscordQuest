@@ -170,8 +170,6 @@ All settings are available in Vencord Settings → Plugins → CompleteDiscordQu
 
 - Automates quest completion which may violate Discord ToS
 - Uses captcha solving services which Discord actively blocks
-- May result in account suspension or ban
-- Is provided for educational purposes only
 
 The developers are not responsible for any consequences of using this plugin.
 

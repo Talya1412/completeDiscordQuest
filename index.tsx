@@ -30,8 +30,6 @@ const fakeGames = new Map();
 const fakeApplications = new Map();
 const claimingQuest = new Set<string>();
 
-let originalRestAPI: any = null;
-let captchaBypassEnabled = false;
 let captchaMonitor: MutationObserver | null = null;
 
 const rewardPreferenceCache = new Map<string, boolean>();
@@ -71,101 +69,7 @@ function removeFakeApplication(questId: string) {
     return result;
 }
 
-function enableCaptchaBypass() {
-    if (captchaBypassEnabled) return;
 
-    console.log("[CompleteDiscordQuest] Enabling captcha bypass wrapper");
-
-    if (!originalRestAPI) {
-        originalRestAPI = {
-            post: RestAPI.post.bind(RestAPI),
-            get: RestAPI.get.bind(RestAPI),
-            patch: RestAPI.patch ? RestAPI.patch.bind(RestAPI) : null,
-        };
-    }
-
-    const isQuestRelatedEndpoint = (url: string): boolean => {
-        if (!url) return false;
-
-        // Exclude message/channel endpoints completely
-        if (url.includes("/channels/")) return false;
-
-        // Only process quest-specific endpoints
-        return url.includes("/quests/") ||
-            url.includes("/applications/public");
-    };
-
-    RestAPI.post = async function (options: any) {
-        const url = options?.url || "";
-
-        if (!settings.store.autoCaptchaSolving || !isQuestRelatedEndpoint(url)) {
-            return await originalRestAPI.post(options);
-        }
-
-        const opts = { ...options };
-
-        if (opts.body && typeof opts.body === "object") {
-            delete opts.body.captcha_key;
-            delete opts.body.captcha_rqtoken;
-            delete opts.body.captcha_rqdata;
-
-            console.log("[CaptchaBypass] Removed captcha keys from POST request:", opts.url);
-        }
-
-        try {
-            return await originalRestAPI.post(opts);
-        } catch (err: any) {
-            const challenge = detectCaptchaChallenge(err);
-            if (challenge) {
-                console.warn("[CaptchaBypass] Captcha is REQUIRED for this request. Cannot bypass.");
-                console.warn("[CaptchaBypass] Discord is enforcing captcha validation. Fake tokens won't work.");
-            }
-            throw err;
-        }
-    };
-
-    RestAPI.get = async function (options: any) {
-        const url = options?.url || "";
-
-        if (!settings.store.autoCaptchaSolving || !isQuestRelatedEndpoint(url)) {
-            return await originalRestAPI.get(options);
-        }
-
-        const opts = { ...options };
-
-        try {
-            return await originalRestAPI.get(opts);
-        } catch (err: any) {
-            const challenge = detectCaptchaChallenge(err);
-            if (challenge) {
-                console.log("[CaptchaBypass] Captcha in GET request, retrying...");
-                const bypassResult = await bypassCaptcha(challenge);
-                if (bypassResult.success && bypassResult.token) {
-                    opts.query = opts.query || {};
-                    opts.query.captcha_key = bypassResult.token;
-                    return await originalRestAPI.get(opts);
-                }
-            }
-            throw err;
-        }
-    };
-
-    captchaBypassEnabled = true;
-}
-
-function disableCaptchaBypass() {
-    if (!captchaBypassEnabled || !originalRestAPI) return;
-
-    console.log("[CompleteDiscordQuest] Disabling captcha bypass wrapper");
-
-    RestAPI.post = originalRestAPI.post;
-    RestAPI.get = originalRestAPI.get;
-    if (originalRestAPI.patch) {
-        RestAPI.patch = originalRestAPI.patch;
-    }
-
-    captchaBypassEnabled = false;
-}
 
 
 const RewardPreference = {
@@ -437,17 +341,16 @@ export default definePlugin({
         QuestsStore.addChangeListener(updateQuestsDebounced);
         updateQuests();
 
-        // CRITICAL: Only enable wrapper if autoCaptchaSolving is ON
-        if (settings.store.autoCaptchaSolving) {
-            enableCaptchaBypass();
-            const servicePreference = settings.store.captchaSolvingService;
-            const apiKeys = {
-                nopecha: settings.store.nopchaApiKey,
-                twoCaptcha: settings.store.twoCaptchaApiKey,
-                capsolver: settings.store.capsolverApiKey,
-            };
-            captchaMonitor = setupCaptchaMonitor(servicePreference, apiKeys);
-        }
+        // Always setup captcha monitor for auto-click checkbox feature
+        const servicePreference = settings.store.autoCaptchaSolving ?
+            settings.store.captchaSolvingService : "fallback";
+        const apiKeys = settings.store.autoCaptchaSolving ? {
+            nopecha: settings.store.nopchaApiKey,
+            twoCaptcha: settings.store.twoCaptchaApiKey,
+            capsolver: settings.store.capsolverApiKey,
+        } : undefined;
+
+        captchaMonitor = setupCaptchaMonitor(servicePreference, apiKeys);
 
         startTokenCacheCleanup();
     },
@@ -458,7 +361,6 @@ export default definePlugin({
             updateQuestsTimeout = null;
         }
         stopCompletingAll();
-        disableCaptchaBypass();
 
         stopTokenCacheCleanup();
         clearTokenCache();

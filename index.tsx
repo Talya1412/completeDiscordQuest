@@ -34,6 +34,43 @@ let originalRestAPI: any = null;
 let captchaBypassEnabled = false;
 let captchaMonitor: MutationObserver | null = null;
 
+const rewardPreferenceCache = new Map<string, boolean>();
+let updateQuestsTimeout: NodeJS.Timeout | null = null;
+let lastProcessedQuestIds = new Set<string>();
+
+let cachedRunningGames: any[] | null = null;
+let cachedStreamMetadata: any | null = null;
+
+function invalidateGamesCache() {
+    cachedRunningGames = null;
+}
+
+function invalidateApplicationsCache() {
+    cachedStreamMetadata = null;
+}
+
+function addFakeGame(questId: string, game: any) {
+    fakeGames.set(questId, game);
+    invalidateGamesCache();
+}
+
+function removeFakeGame(questId: string) {
+    const result = fakeGames.delete(questId);
+    if (result) invalidateGamesCache();
+    return result;
+}
+
+function addFakeApplication(questId: string, app: any) {
+    fakeApplications.set(questId, app);
+    invalidateApplicationsCache();
+}
+
+function removeFakeApplication(questId: string) {
+    const result = fakeApplications.delete(questId);
+    if (result) invalidateApplicationsCache();
+    return result;
+}
+
 function enableCaptchaBypass() {
     if (captchaBypassEnabled) return;
 
@@ -47,8 +84,21 @@ function enableCaptchaBypass() {
         };
     }
 
+    const isQuestRelatedEndpoint = (url: string): boolean => {
+        if (!url) return false;
+
+        // Exclude message/channel endpoints completely
+        if (url.includes("/channels/")) return false;
+
+        // Only process quest-specific endpoints
+        return url.includes("/quests/") ||
+            url.includes("/applications/public");
+    };
+
     RestAPI.post = async function (options: any) {
-        if (!settings.store.autoCaptchaSolving) {
+        const url = options?.url || "";
+
+        if (!settings.store.autoCaptchaSolving || !isQuestRelatedEndpoint(url)) {
             return await originalRestAPI.post(options);
         }
 
@@ -75,7 +125,9 @@ function enableCaptchaBypass() {
     };
 
     RestAPI.get = async function (options: any) {
-        if (!settings.store.autoCaptchaSolving) {
+        const url = options?.url || "";
+
+        if (!settings.store.autoCaptchaSolving || !isQuestRelatedEndpoint(url)) {
             return await originalRestAPI.get(options);
         }
 
@@ -166,8 +218,15 @@ function questMatchesRewardPreference(quest: QuestValue) {
         return true;
     }
 
+    const cacheKey = `${quest.id}-${preference}`;
+    if (rewardPreferenceCache.has(cacheKey)) {
+        return rewardPreferenceCache.get(cacheKey)!;
+    }
+
     const rewardCategories = getQuestRewardCategories(quest);
-    return rewardCategories.includes(preference);
+    const matches = rewardCategories.includes(preference);
+    rewardPreferenceCache.set(cacheKey, matches);
+    return matches;
 }
 
 function getSpoofingProfile(): SpoofingProfile {
@@ -372,38 +431,15 @@ export default definePlugin({
                 match: /(\(\i\){let{tab:(\i)}=.+?children:\i}\))(]}\))/,
                 replace: "$1,$self.renderQuestButtonBadges($2)$3"
             }
-        },
-        {
-            find: "\"RunningGameStore\"",
-            group: true,
-            replacement: [
-                {
-                    match: /}getRunningGames\(\){return/,
-                    replace: "}getRunningGames(){const games=$self.getRunningGames();return games ? games : "
-                },
-                {
-                    match: /}getGameForPID\((\i)\){/,
-                    replace: "}getGameForPID($1){const pid=$self.getGameForPID($1);if(pid){return pid;}"
-                }
-            ]
-        },
-        {
-            find: "ApplicationStreamingStore",
-            replacement: {
-                match: /}getStreamerActiveStreamMetadata\(\){/,
-                replace: "}getStreamerActiveStreamMetadata(){const metadata=$self.getStreamerActiveStreamMetadata();if(metadata){return metadata;}"
-            }
         }
     ],
     start: () => {
-        QuestsStore.addChangeListener(updateQuests);
+        QuestsStore.addChangeListener(updateQuestsDebounced);
         updateQuests();
 
-        enableCaptchaBypass();
-
-        startTokenCacheCleanup();
-
+        // CRITICAL: Only enable wrapper if autoCaptchaSolving is ON
         if (settings.store.autoCaptchaSolving) {
+            enableCaptchaBypass();
             const servicePreference = settings.store.captchaSolvingService;
             const apiKeys = {
                 nopecha: settings.store.nopchaApiKey,
@@ -412,9 +448,15 @@ export default definePlugin({
             };
             captchaMonitor = setupCaptchaMonitor(servicePreference, apiKeys);
         }
+
+        startTokenCacheCleanup();
     },
     stop: () => {
-        QuestsStore.removeChangeListener(updateQuests);
+        QuestsStore.removeChangeListener(updateQuestsDebounced);
+        if (updateQuestsTimeout) {
+            clearTimeout(updateQuestsTimeout);
+            updateQuestsTimeout = null;
+        }
         stopCompletingAll();
         disableCaptchaBypass();
 
@@ -425,6 +467,9 @@ export default definePlugin({
             cleanupCaptchaMonitor(captchaMonitor);
             captchaMonitor = null;
         }
+
+        rewardPreferenceCache.clear();
+        lastProcessedQuestIds.clear();
     },
 
     renderQuestButtonTopBar() {
@@ -453,26 +498,19 @@ export default definePlugin({
             questButton.children.push(<QuestsCount />);
         }
         return questButton;
-    },
-
-    getRunningGames() {
-        if (fakeGames.size > 0) {
-            return Array.from(fakeGames.values());
-        }
-    },
-
-    getGameForPID(pid) {
-        if (fakeGames.size > 0) {
-            return Array.from(fakeGames.values()).find(game => game.pid === pid);
-        }
-    },
-
-    getStreamerActiveStreamMetadata() {
-        if (fakeApplications.size > 0) {
-            return Array.from(fakeApplications.values()).at(0);
-        }
     }
 });
+
+function updateQuestsDebounced() {
+    if (updateQuestsTimeout) {
+        clearTimeout(updateQuestsTimeout);
+    }
+
+    updateQuestsTimeout = setTimeout(() => {
+        updateQuests();
+        updateQuestsTimeout = null;
+    }, 300);
+}
 
 function updateQuests() {
     availableQuests = [...QuestsStore.quests.values()];
@@ -480,6 +518,22 @@ function updateQuests() {
     acceptableQuests = preferredQuests.filter(x => x.userStatus?.enrolledAt == null && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
     completableQuests = preferredQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
     claimableQuests = preferredQuests.filter(x => x.userStatus?.completedAt && !x.userStatus?.claimedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+
+    const currentQuestIds = new Set([
+        ...acceptableQuests.map(q => `accept-${q.id}`),
+        ...completableQuests.map(q => `complete-${q.id}`),
+        ...claimableQuests.map(q => `claim-${q.id}`)
+    ]);
+
+    const hasChanges = currentQuestIds.size !== lastProcessedQuestIds.size ||
+        [...currentQuestIds].some(id => !lastProcessedQuestIds.has(id));
+
+    if (!hasChanges && lastProcessedQuestIds.size > 0) {
+        return;
+    }
+
+    lastProcessedQuestIds = currentQuestIds;
+
     for (const quest of acceptableQuests) {
         acceptQuest(quest);
     }
@@ -590,6 +644,10 @@ function completeQuest(quest: QuestValue) {
         completingQuest,
         fakeGames,
         fakeApplications,
+        addFakeGame,
+        removeFakeGame,
+        addFakeApplication,
+        removeFakeApplication,
         RestAPI,
         FluxDispatcher,
         RunningGameStore,

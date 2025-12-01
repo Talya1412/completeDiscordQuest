@@ -12,7 +12,7 @@ export const playOnDesktopHandler: QuestHandler = {
         return taskName === "PLAY_ON_DESKTOP";
     },
 
-    handle({ quest, questName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, fakeGames, onQuestComplete }) {
+    handle({ quest, questName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, fakeGames, addFakeGame, removeFakeGame, onQuestComplete }) {
         if (!isApp) {
             console.log("This no longer works in browser for non-video quests. Use the discord desktop app to complete the", questName, "quest!");
             return;
@@ -36,23 +36,25 @@ export const playOnDesktopHandler: QuestHandler = {
                 start: Date.now(),
             };
             const realGames = fakeGames.size === 0 ? RunningGameStore.getRunningGames() : [];
-            fakeGames.set(quest.id, fakeGame);
+            addFakeGame(quest.id, fakeGame);
             const fakeGames2 = Array.from(fakeGames.values());
             FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fakeGames2 });
 
             const playOnDesktop = event => {
                 if (event.questId !== quest.id) return;
+
                 const progress = configVersion === 1 ? event.userStatus.streamProgressSeconds : Math.floor(event.userStatus.progress.PLAY_ON_DESKTOP.value);
                 console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                 if (!completingQuest.get(quest.id) || progress >= secondsNeeded) {
                     console.log("Stopping completing quest:", questName);
 
-                    fakeGames.delete(quest.id);
+                    removeFakeGame(quest.id);
+                    FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", playOnDesktop);
+
                     const games = RunningGameStore.getRunningGames();
                     const added = fakeGames.size === 0 ? games : [];
                     FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: added, games: games });
-                    FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", playOnDesktop);
 
                     if (progress >= secondsNeeded) {
                         console.log("Quest completed!");

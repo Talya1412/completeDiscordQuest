@@ -12,7 +12,7 @@ export const playOnDesktopHandler: QuestHandler = {
         return taskName === "PLAY_ON_DESKTOP";
     },
 
-    handle({ quest, questName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, fakeGames, addFakeGame, removeFakeGame, onQuestComplete }) {
+    handle({ quest, questName, secondsNeeded, secondsDone, applicationId, applicationName, pid, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, fakeGames, addFakeGame, removeFakeGame, getSpoofingProfile, onQuestComplete }) {
         if (!isApp) {
             console.log("This no longer works in browser for non-video quests. Use the discord desktop app to complete the", questName, "quest!");
             return;
@@ -40,33 +40,65 @@ export const playOnDesktopHandler: QuestHandler = {
             const fakeGames2 = Array.from(fakeGames.values());
             FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fakeGames2 });
 
-            const playOnDesktop = event => {
-                if (event.questId !== quest.id) return;
+            const cleanupAndFinish = (completed: boolean) => {
+                removeFakeGame(quest.id);
+                const games = RunningGameStore.getRunningGames();
+                const added = fakeGames.size === 0 ? games : [];
+                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: added, games: games });
 
-                const progress = configVersion === 1 ? event.userStatus.streamProgressSeconds : Math.floor(event.userStatus.progress.PLAY_ON_DESKTOP.value);
-                console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
-
-                if (!completingQuest.get(quest.id) || progress >= secondsNeeded) {
-                    console.log("Stopping completing quest:", questName);
-
-                    removeFakeGame(quest.id);
-                    FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", playOnDesktop);
-
-                    const games = RunningGameStore.getRunningGames();
-                    const added = fakeGames.size === 0 ? games : [];
-                    FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: added, games: games });
-
-                    if (progress >= secondsNeeded) {
-                        console.log("Quest completed!");
-                        onQuestComplete();
-                    } else {
-                        completingQuest.set(quest.id, false);
-                    }
+                if (completed) {
+                    console.log("Quest completed!");
+                    onQuestComplete();
+                } else {
+                    completingQuest.set(quest.id, false);
                 }
             };
-            FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", playOnDesktop);
 
-            console.log(`Spoofed your game to ${applicationName}. Wait for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
+            const playOnDesktop = async () => {
+                console.log(`Spoofed your game to ${applicationName}. Wait for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
+
+                while (true) {
+                    if (!completingQuest.get(quest.id)) {
+                        console.log("Stopping completing quest:", questName);
+                        cleanupAndFinish(false);
+                        break;
+                    }
+
+                    let res;
+                    try {
+                        res = await callWithRetry(() => RestAPI.post({
+                            url: `/quests/${quest.id}/heartbeat`,
+                            body: { stream_key: null, terminal: false }
+                        }), { label: "heartbeat" });
+                    } catch (err) {
+                        console.error("Heartbeat failed after retries, stopping quest:", questName, err);
+                        cleanupAndFinish(false);
+                        break;
+                    }
+
+                    const progress = Math.floor(res.body.progress?.PLAY_ON_DESKTOP?.value ?? 0);
+                    console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
+
+                    if (progress >= secondsNeeded) {
+                        console.log("Stopping completing quest:", questName);
+                        try {
+                            await callWithRetry(() => RestAPI.post({
+                                url: `/quests/${quest.id}/heartbeat`,
+                                body: { stream_key: null, terminal: true }
+                            }), { label: "heartbeat-terminal" });
+                        } catch (err) {
+                            console.error("Terminal heartbeat failed after retries for quest:", questName, err);
+                        }
+                        cleanupAndFinish(true);
+                        break;
+                    }
+
+                    const { playActivity: playActivityProfile } = getSpoofingProfile();
+                    await new Promise(resolve => setTimeout(resolve, playActivityProfile.intervalMs));
+                }
+            };
+
+            playOnDesktop();
         }).catch(err => {
             console.error("Failed to fetch application data for quest", questName, err);
             completingQuest.set(quest.id, false);

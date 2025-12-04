@@ -159,48 +159,63 @@ function getSpoofingProfile(): SpoofingProfile {
 function gatherRedeemCodes(body: any): string[] {
     const codes = new Set<string>();
     const codePattern = /^[A-Za-z0-9-]{10,}$/;
-    const keysToCheck = ["code", "redemption_code", "redemptionCode", "gift_code", "giftCode", "redeemable_code", "redeemableCode", "claim_code", "claimCode", "reward_code", "rewardCode"];
 
     const isValidRedeemCode = (str: string): boolean => {
         if (!codePattern.test(str)) return false;
         if (/^\d+$/.test(str)) return false;
         if (str.length < 10 || str.length > 50) return false;
         const letterCount = (str.match(/[A-Za-z]/g) || []).length;
-        return letterCount >= 3;
+        const hasHyphen = str.includes("-");
+        return letterCount >= 3 || (letterCount >= 2 && hasHyphen);
     };
 
-    const walk = (value: any, depth: number, fromKey: string = "") => {
-        if (depth > 4 || value == null) return;
+    const isCodeRelatedKey = (key: string): boolean => {
+        const lowerKey = key.toLowerCase();
+        return lowerKey.includes("code") ||
+            lowerKey.includes("redemption") ||
+            lowerKey.includes("reward") ||
+            lowerKey.includes("claim") ||
+            lowerKey.includes("gift") ||
+            lowerKey.includes("key") ||
+            lowerKey.includes("voucher") ||
+            lowerKey.includes("token");
+    };
+
+    const walk = (value: any, depth: number, parentKey: string = "") => {
+        if (depth > 6 || value == null) return;
 
         if (typeof value === "string") {
             const trimmed = value.trim();
-            if (keysToCheck.includes(fromKey.toLowerCase()) && isValidRedeemCode(trimmed)) {
+            if (isValidRedeemCode(trimmed)) {
                 codes.add(trimmed);
+                console.log(`[CompleteDiscordQuest] Found potential code: ${trimmed} (from key: ${parentKey})`);
             }
             return;
         }
 
         if (Array.isArray(value)) {
             for (const item of value) {
-                walk(item, depth + 1, fromKey);
+                walk(item, depth + 1, parentKey);
             }
             return;
         }
 
         if (typeof value === "object") {
             for (const [key, val] of Object.entries(value)) {
-                if (keysToCheck.includes(key.toLowerCase())) {
+                if (isCodeRelatedKey(key) || isCodeRelatedKey(parentKey)) {
                     walk(val, depth + 1, key);
                 } else {
-                    walk(val, depth + 1, "");
+                    walk(val, depth + 1, key);
                 }
             }
         }
     };
 
+    console.log("[CompleteDiscordQuest] Scanning response for codes:", JSON.stringify(body, null, 2).substring(0, 1000));
     walk(body, 0);
     return Array.from(codes);
 }
+
 
 function appendRedeemCodes(codes: string[], questName: string) {
     if (codes.length === 0) return;
